@@ -558,7 +558,16 @@ impl<'a, B: CryptoOps> Policy<'a, B> {
             let rsa_key: Pkcs1RsaPublicKey<'_> =
                 asn1::parse_single(issuer_spki.subject_public_key.as_bytes())?;
 
-            if rsa_key.n.as_bytes().len() * 8 < self.minimum_rsa_modulus {
+            let n_bytes = rsa_key.n.as_bytes();
+            // Compute the actual bit length of the modulus, not the DER
+            // byte length. DER encoding adds a leading 0x00 padding byte
+            // when the MSB of the unsigned value is set, which would
+            // cause len()*8 to overestimate by up to 8 bits.
+            let modulus_size = n_bytes.len() * 8
+                - n_bytes
+                    .first()
+                    .map_or(0, |&b| b.leading_zeros() as usize);
+            if modulus_size < self.minimum_rsa_modulus {
                 return Err(ValidationError::new(ValidationErrorKind::Other(
                     "RSA key is too weak".into(),
                 )));
